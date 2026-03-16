@@ -1,0 +1,282 @@
+---
+description: 'Universal Next.js code examples and patterns. Use alongside nextjs-sensible-defaults for detailed implementation guidance.'
+globs: *.tsx,*.ts
+alwaysApply: false
+---
+
+# Next.js Code Patterns
+
+Detailed code examples for patterns defined in `nextjs-sensible-defaults.mdc`.
+
+## Server vs Client Components
+
+### Server Component (Default)
+
+```tsx
+// ✅ Good - Server Component fetches data
+export async function ProductList() {
+  const products = await fetch('/api/products').then((r) => r.json())
+  return (
+    <ul>
+      {products.map((p) => (
+        <li key={p.id}>{p.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Client Component (When Needed)
+
+```tsx
+// ✅ Good - Client Component for interactivity
+'use client'
+
+import { useState } from 'react'
+
+export function Counter() {
+  const [count, setCount] = useState(0)
+  return <button onClick={() => setCount((c) => c + 1)}>Count: {count}</button>
+}
+```
+
+## Performance Patterns
+
+### Debounced localStorage
+
+```tsx
+// ❌ Bad - writes on every keystroke
+useEffect(() => {
+  localStorage.setItem('state', JSON.stringify(state))
+}, [state])
+
+// ✅ Good - debounced writes
+useEffect(() => {
+  const timeoutId = setTimeout(() => {
+    localStorage.setItem('state', JSON.stringify(state))
+  }, 500)
+  return () => clearTimeout(timeoutId)
+}, [state])
+```
+
+### Parallel Data Fetching
+
+```tsx
+// ❌ Bad - sequential (waterfall)
+const user = await fetchUser(id)
+const posts = await fetchPosts(id)
+const comments = await fetchComments(id)
+
+// ✅ Good - parallel
+const [user, posts, comments] = await Promise.all([
+  fetchUser(id),
+  fetchPosts(id),
+  fetchComments(id),
+])
+```
+
+### Memoization
+
+```tsx
+// ❌ Bad - recalculates on every render
+function Component({ items }) {
+  const sorted = items.sort((a, b) => b.score - a.score)
+  return <List data={sorted} />
+}
+
+// ✅ Good - memoized
+function Component({ items }) {
+  const sorted = useMemo(() => items.sort((a, b) => b.score - a.score), [items])
+  return <List data={sorted} />
+}
+```
+
+## Accessibility Patterns
+
+### Icon-Only Buttons
+
+```tsx
+// ❌ Bad - no accessible label
+<button><CloseIcon /></button>
+
+// ✅ Good - accessible
+<button aria-label="Close dialog">
+  <CloseIcon aria-hidden="true" />
+</button>
+```
+
+### Form Labels
+
+```tsx
+// ❌ Bad - no label association
+<span>Email</span>
+<input type="email" />
+
+// ✅ Good - properly associated
+<label htmlFor="email">Email</label>
+<input id="email" type="email" />
+```
+
+### Keyboard Support
+
+```tsx
+// ❌ Bad - no keyboard support
+<div onClick={handleClick}>Click me</div>
+
+// ✅ Good - use semantic button
+<button onClick={handleClick}>Click me</button>
+
+// ✅ Alternative - if button styling doesn't work
+<div
+  role="button"
+  tabIndex={0}
+  onClick={handleClick}
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick()
+    }
+  }}
+>
+  Click me
+</div>
+```
+
+## TypeScript Patterns
+
+### Type Narrowing
+
+```tsx
+// ❌ Bad - using any
+function process(data: any) {
+  return data.value
+}
+
+// ✅ Good - unknown with narrowing
+function process(data: unknown) {
+  if (typeof data === 'object' && data !== null && 'value' in data) {
+    return (data as { value: string }).value
+  }
+  throw new Error('Invalid data')
+}
+```
+
+### Constants for User-Facing Text
+
+```tsx
+// ❌ Bad - inline text
+<input placeholder="Enter your email" />
+<button>Submit</button>
+
+// ✅ Good - constants
+const PLACEHOLDER_EMAIL = 'Enter your email'
+const LABEL_SUBMIT = 'Submit'
+
+<input placeholder={PLACEHOLDER_EMAIL} />
+<button>{LABEL_SUBMIT}</button>
+```
+
+## Error Handling Patterns
+
+### Early Returns
+
+```tsx
+// ❌ Bad - deeply nested
+function process(data) {
+  if (data) {
+    if (data.items) {
+      if (data.items.length > 0) {
+        // actual logic
+      }
+    }
+  }
+}
+
+// ✅ Good - early returns
+function process(data) {
+  if (!data) return null
+  if (!data.items) return null
+  if (data.items.length === 0) return null
+  // actual logic
+}
+```
+
+### Error Boundaries
+
+```tsx
+// ❌ Bad - no error boundary
+export default function Page() {
+  return <ComponentThatMightThrow />
+}
+
+// ✅ Good - wrapped in error boundary
+export default function Page() {
+  return (
+    <ErrorBoundary fallback={<ErrorFallback />}>
+      <ComponentThatMightThrow />
+    </ErrorBoundary>
+  )
+}
+```
+
+## State Management Patterns
+
+### Context vs Prop Drilling
+
+```tsx
+// ❌ Bad - prop drilling through 4 levels
+;<App user={user}>
+  <Layout user={user}>
+    <Page user={user}>
+      <Component user={user} />
+    </Page>
+  </Layout>
+</App>
+
+// ✅ Good - context for widely-used data
+const UserContext = createContext<User | null>(null)
+
+function App() {
+  return (
+    <UserContext.Provider value={user}>
+      <Layout>
+        <Page>
+          <Component /> {/* uses useContext(UserContext) */}
+        </Page>
+      </Layout>
+    </UserContext.Provider>
+  )
+}
+```
+
+## Security Patterns
+
+### Environment Variables
+
+```tsx
+// ❌ Bad - exposes secret to client
+const apiKey = process.env.NEXT_PUBLIC_API_SECRET
+
+// ✅ Good - server-side only (no NEXT_PUBLIC_ prefix)
+const apiKey = process.env.API_SECRET
+```
+
+### Sanitizing User Content
+
+```tsx
+// ❌ Bad - XSS vulnerability
+<div dangerouslySetInnerHTML={{ __html: userComment }} />
+
+// ✅ Good - sanitized
+import DOMPurify from 'dompurify'
+
+<div dangerouslySetInnerHTML={{
+  __html: DOMPurify.sanitize(userComment, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a'],
+    ALLOWED_ATTR: ['href']
+  })
+}} />
+
+// ✅ Better - avoid dangerouslySetInnerHTML
+<div>{userComment}</div> // React auto-escapes
+```

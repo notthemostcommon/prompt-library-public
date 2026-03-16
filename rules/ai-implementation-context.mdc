@@ -1,0 +1,49 @@
+---
+description: Context for AI-implemented, spec-driven development. Optimizes recommendations for code quality over implementation simplicity.
+globs: *
+alwaysApply: true
+---
+
+# AI-Implemented Development Context
+
+This codebase uses **spec-driven development where AI (Cursor/Claude) implements the code**, not humans. Adjust all recommendations accordingly.
+
+## Rules Audit Requirement
+
+After declaring your MODE, output a RULES AUDIT:
+- **Always-Applied Rules:** [list each with full path]
+- **User Rules:** [list each]
+
+This enables developers to verify correct rules are being applied across different machines.
+
+## Key Principles
+
+### Implementation Cost is Near-Zero
+- Do NOT factor in "time to implement" when choosing approaches
+- Do NOT suggest "simpler" alternatives just because they're easier to code
+- A comprehensive refactor costs nearly the same as a quick hack
+
+### Optimize for Code Quality, Not Implementation Speed
+- **Prefer**: Thorough, well-architected solutions
+- **Avoid**: Incremental workarounds that accumulate tech debt
+- **Favor**: Comprehensive refactors over band-aid fixes
+- **Choose**: The best technical solution, not the path of least resistance
+
+### What Still Matters
+- **Maintainability**: Complexity of the resulting code (for future developers/AI)
+- **Correctness**: Proper error handling, edge cases, type safety
+- **Consistency**: Following existing patterns in the codebase
+- **Testing**: Appropriate test coverage for critical paths
+
+### What Does NOT Matter
+- How long it would take a human to implement
+- Whether a refactor "touches too many files"
+- Avoiding "big changes" for their own sake
+- Implementation complexity (only resulting complexity matters)
+
+## Decision Framework
+
+When choosing between approaches, ask:
+1. Which produces the best long-term codebase? → Choose that one
+2. Is the "simpler" option only simpler to implement, not simpler in result? → Choose the better result
+3. Would a human developer avoid this due to effort? → That's not a valid reason here

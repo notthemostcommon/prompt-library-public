@@ -1,0 +1,47 @@
+---
+description: 'Core testing principles for spec-driven planning. Ensures plans align with testing requirements before implementation.'
+globs: specifications/**/*.md,*-plan.md,*task*.md,TASK_BREAKDOWN.md
+alwaysApply: false
+---
+
+# Frontend Testing Principles (For Planning)
+
+When creating implementation plans, ensure they align with these testing requirements.
+
+## Framework Requirements
+
+| Purpose | Framework |
+|---------|-----------|
+| Unit Tests | Jest + React Testing Library |
+| E2E Tests | Playwright |
+| API Mocking | MSW (Mock Service Worker) |
+
+## Critical Rules (Plan for these)
+
+Plans MUST account for these patterns to avoid execution deviations:
+
+| Rule | Correct | Incorrect |
+|------|---------|-----------|
+| User interactions | `userEvent.click()` | `fireEvent.click()` |
+| Element queries | `screen.getByRole()` | `getByTestId()`, `container.querySelector()` |
+| Async elements | `screen.findByRole()` | `waitFor(() => getByRole())` |
+| Query access | `screen.getByRole()` | `const { getByRole } = render()` |
+| Assertions | `expect(el).toBeDisabled()` | `expect(el.disabled).toBe(true)` |
+
+## Test File Location
+
+- All tests in `__tests__/` directory at project root
+- Mirror source structure: `components/layout/header.tsx` → `__tests__/components/layout/header.test.tsx`
+
+## When Planning Test Tasks
+
+Include in acceptance criteria:
+
+- [ ] Uses accessible queries (`getByRole`, `getByLabelText`)
+- [ ] Uses `userEvent` for interactions
+- [ ] Uses `screen` for all queries
+- [ ] Includes loading/error state tests for async components
+
+## Reference
+
+For detailed implementation patterns and API examples, see `frontend-testing.mdc`

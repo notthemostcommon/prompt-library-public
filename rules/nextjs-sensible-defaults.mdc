@@ -1,0 +1,160 @@
+---
+description: 'Next.js App Router patterns, Server/Client Components, TypeScript strict mode, and React best practices. Apply when building or reviewing React components and pages.'
+globs: *.tsx,*.ts,*.js,*.test.tsx,*.test.ts,*.spec.ts,next.config.ts,*.md
+alwaysApply: false
+---
+
+# Next.js Web Standards
+
+## 1. Project Structure
+
+```
+app/           # Next.js App Router pages, layouts, API routes
+components/    # React components (see nextjs-component-architecture.mdc)
+lib/           # Utility functions, API clients
+hooks/         # Custom React hooks
+types/         # Shared TypeScript types
+```
+
+**Key Rules:**
+
+- No `src/` directory - source at project root
+- No barrel exports (`index.ts`) - import directly from files
+- Group related files together (colocation)
+
+## 2. Naming Conventions
+
+| Type                | Convention   | Example                         |
+| ------------------- | ------------ | ------------------------------- |
+| Component files     | kebab-case   | `product-card.tsx`              |
+| Component exports   | PascalCase   | `export function ProductCard()` |
+| Page files          | `page.tsx`   | `app/products/[slug]/page.tsx`  |
+| Custom hooks        | `use` prefix | `useAuth`, `useUser`            |
+| Other files         | kebab-case   | `fetch-data.ts`                 |
+| Variables/functions | camelCase    | `isLoading`, `handleClick`      |
+| Types/interfaces    | PascalCase   | `UserProfile`, `ApiResponse`    |
+
+## 3. Export Patterns
+
+**Default exports:** Only for Next.js special files
+
+- `page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `not-found.tsx`
+
+**Named exports:** Everything else
+
+- Components, hooks, utilities, types, API handlers
+
+```typescript
+// ✅ Component
+export function Button({ children }: ButtonProps) { ... }
+
+// ✅ API route
+export async function GET(request: Request) { ... }
+```
+
+## 4. TypeScript Requirements
+
+- **Forbid `any`**: Use `unknown` with type narrowing
+- **Explicit typing**: Props, state, hook returns, complex variables
+- **User-facing text as constants**: Prepare for i18n
+
+```typescript
+// ❌ Forbidden
+function process(data: any) { ... }
+
+// ✅ Required
+function process(data: unknown) {
+  if (isValidData(data)) { ... }
+}
+
+// ✅ User-facing text
+const LABEL_SUBMIT = 'Submit'
+const ERROR_REQUIRED = 'This field is required'
+```
+
+## 5. Server vs Client Components
+
+**Default to Server Components.** Only use `'use client'` when needed.
+
+| Need                    | Component Type |
+| ----------------------- | -------------- |
+| Data fetching           | Server         |
+| SEO content             | Server         |
+| Static UI               | Server         |
+| `useState`, `useEffect` | Client         |
+| Browser APIs            | Client         |
+| Event handlers          | Client         |
+
+**Runtime Secrets Pattern:**
+
+```typescript
+// Pages that need runtime secrets (not available at build time)
+export const dynamic = 'force-dynamic'
+```
+
+## 6. Styling Requirements
+
+- **Tailwind CSS**: Primary styling solution (mandatory)
+- **shadcn/ui**: All components built from shadcn primitives (mandatory)
+- **CSS Variables**: Use for theming
+- **Mobile-first**: Responsive design approach
+
+## 7. Performance Optimization
+
+| Feature        | Usage               |
+| -------------- | ------------------- |
+| `next/image`   | All images          |
+| `next/link`    | Internal navigation |
+| `next/font`    | Font loading        |
+| `next/dynamic` | Lazy loading        |
+
+**Data fetching:**
+
+- Parallel fetches with `Promise.all()`
+- Use React Query for client-side state — see `docs/REACT_QUERY_GUIDE.md` for the required pattern
+- **All** AEM content **must** use Server Actions as `queryFn` (not `useEffect + fetch`) with server-side `prefetchQuery` + `HydrationBoundary` — no exceptions; see `docs/REACT_QUERY_GUIDE.md#server-actions-pattern-for-aem-content`
+
+## 8. Error Handling
+
+- Early returns for error conditions
+- Guard clauses for preconditions
+- Error boundaries around async operations
+- **Console Logging Policy**:
+  - **Client-Side**: All console methods prohibited
+  - **Server-Side**: `console.error()` allowed for critical errors; prefer OpenTelemetry for structured logging
+  - **Instrumentation**: Console logging acceptable in initialization code
+
+## 9. Anti-Patterns Quick Reference
+
+| Anti-Pattern                                   | Severity | Fix                                    |
+| ---------------------------------------------- | -------- | -------------------------------------- |
+| localStorage on every state change             | HIGH     | Debounce writes (500ms)                |
+| Missing memoization for expensive ops          | MEDIUM   | `useMemo` for >5ms operations          |
+| Unbounded list rendering (>100 items)          | HIGH     | Use virtualization                     |
+| Sequential API calls that could parallelize    | MEDIUM   | `Promise.all()`                        |
+| Missing useEffect dependencies                 | HIGH     | Include all dependencies               |
+| Client fetch when Server Component works       | MEDIUM   | Move to Server Component               |
+| Index as key for dynamic lists                 | MEDIUM   | Use stable unique ID                   |
+| Direct DOM manipulation                        | HIGH     | Use refs, not `document.querySelector` |
+| Prop drilling through 3+ levels                | LOW      | Use Context                            |
+| PII in localStorage without encryption         | HIGH     | Use HttpOnly cookies                   |
+| `dangerouslySetInnerHTML` without sanitization | HIGH     | Use DOMPurify                          |
+| API secrets in client code (`NEXT_PUBLIC_`)    | HIGH     | Server-side only                       |
+| Interactive div without keyboard support       | HIGH     | Use `<button>` or add handlers         |
+| Icon-only buttons without aria-label           | HIGH     | Add `aria-label`                       |
+| Form inputs without labels                     | HIGH     | Associate with `htmlFor`               |
+| Using `any` type                               | HIGH     | Use `unknown` with narrowing           |
+| Non-null assertion without validation          | MEDIUM   | Handle undefined case                  |
+| Magic strings/numbers in code                  | MEDIUM   | Extract to named constants             |
+| Inline user-facing text                        | MEDIUM   | Extract constants for i18n readiness   |
+| `useEffect + fetch` for AEM content            | HIGH     | Use Server Action as React Query `queryFn` + server prefetch + HydrationBoundary — see `docs/REACT_QUERY_GUIDE.md` |
+
+For detailed examples, see `nextjs-patterns.mdc`.
+
+## 10. Cross-References
+
+- Component architecture: `nextjs-component-architecture.mdc`
+- Testing: `frontend-testing.mdc`
+- Accessibility: `accessibility.mdc`
+- Code examples: `nextjs-patterns.mdc`
+- Data fetching (React Query + Server Actions): `docs/REACT_QUERY_GUIDE.md`

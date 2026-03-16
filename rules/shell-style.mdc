@@ -1,0 +1,477 @@
+---
+description: Shell script coding standards and best practices for consistency, maintainability, and security
+globs: *.sh
+alwaysApply: false
+---
+
+# Shell Script Coding Style Guide
+
+## Overview
+
+This document defines coding standards for shell scripts in infrastructure as code projects. These rules ensure consistency, maintainability, and security across all shell scripts.
+
+## File Structure and Organization
+
+### Script Header
+All shell scripts must begin with:
+```bash
+#!/bin/bash
+
+# Brief description of script purpose
+# Additional context about what the script does
+# Author and maintenance information if applicable
+```
+
+### Error Handling
+All scripts must include strict error handling:
+```bash
+set -euo pipefail  # Exit on error, undefined variables, and pipe failures
+```
+
+### Directory Structure Constants
+Define script-relative directories as readonly constants:
+```bash
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly CONFIG_DIR="$SCRIPT_DIR/config"
+readonly LIB_DIR="$SCRIPT_DIR/lib"
+```
+
+### Library Sourcing
+Source utility libraries using absolute paths:
+```bash
+source "$LIB_DIR/common.sh"
+source "$LIB_DIR/validation.sh"
+source "$LIB_DIR/security.sh"
+```
+
+## Variable Conventions
+
+### Constants
+- Use `readonly` for all constants
+- Constants should be in UPPER_CASE with underscores
+```bash
+readonly SUCCESS=0
+readonly ERROR=1
+readonly MAX_RETRIES=3
+```
+
+### Global Variables
+- Initialize global variables at the top of the script
+- Use descriptive names in UPPER_CASE
+- Initialize with empty values where appropriate
+```bash
+PROJECT_ID=""
+REGION=""
+ENVIRONMENT=""
+```
+
+### Local Variables
+- Use `local` keyword for all function variables
+- Use lowercase with underscores for local variables
+```bash
+local project_id="$1"
+local api_name="$2"
+local retry_count=0
+```
+
+### Exit Codes
+Define meaningful exit codes as constants:
+```bash
+readonly SUCCESS=0
+readonly ERROR=1
+readonly PARTIAL_COMPLETION=2
+```
+
+## Function Design
+
+### Function Naming
+- Use lowercase with underscores (snake_case)
+- Use descriptive, action-oriented names
+- Group related functions with common prefixes
+
+```bash
+# Good
+validate_gcloud_auth()
+check_api_enabled()
+log_error()
+
+# Bad
+validateGcloudAuth()
+checkAPI()
+logErr()
+```
+
+### Function Structure
+```bash
+function_name() {
+    local param1="$1"
+    local param2="$2"
+    
+    log_info "Starting function_name with params: $param1, $param2"
+    
+    # Function logic here
+    
+    if [[ condition ]]; then
+        log_success "Function completed successfully"
+        return 0
+    else
+        log_error "Function failed"
+        return 1
+    fi
+}
+```
+
+### Parameter Handling
+- Always use local variables for function parameters
+- Validate required parameters at the beginning of functions
+- Use descriptive parameter names
+
+```bash
+validate_project_access() {
+    local project_id="$1"
+    
+    if [[ -z "$project_id" ]]; then
+        log_error "Project ID is required"
+        return 1
+    fi
+    
+    # Function logic
+}
+```
+
+## Logging and Output
+
+### Logging Functions
+Use standardized logging functions from `common.sh`:
+- `log_info()` - General information
+- `log_error()` - Error messages (to stderr)
+- `log_success()` - Success messages
+- `log_warning()` - Warning messages
+
+### Logging Format
+All log messages should:
+- Include timestamps
+- Use consistent formatting
+- Be descriptive and actionable
+
+```bash
+log_info "Validating access to GCP project: $project_id"
+log_error "Cannot access project '$project_id' or project does not exist"
+log_success "Project '$project_id' is accessible"
+log_warning "Current gcloud project ($current_project) differs from target ($project_id)"
+```
+
+## Code Formatting
+
+### Indentation
+- Use 4 spaces for indentation
+- No tabs allowed
+- Consistent indentation for nested blocks
+
+### Line Length
+- Keep lines under 100 characters when possible
+- Break long lines at logical points
+- Use backslash continuation for long commands
+
+```bash
+gcloud projects add-iam-policy-binding "$project_id" \
+    --member="serviceAccount:$sa_email" \
+    --role="$role" \
+    --quiet >/dev/null 2>&1
+```
+
+### Spacing
+- Add blank lines between logical sections
+- No trailing whitespace
+- Single space around operators and after commas
+
+### Quotes
+- Always quote variables: `"$variable"`
+- Use double quotes for variables that may contain spaces
+- Use single quotes for literal strings
+
+```bash
+# Good
+local project_id="$1"
+echo "Processing project: $project_id"
+echo 'This is a literal string'
+
+# Bad
+local project_id=$1
+echo "Processing project: "$project_id
+```
+
+## Conditional Statements and Loops
+
+### Conditional Formatting
+```bash
+if [[ condition ]]; then
+    # action
+elif [[ other_condition ]]; then
+    # other action
+else
+    # default action
+fi
+```
+
+### Use `[[` Instead of `[`
+Always use `[[` for conditional expressions:
+```bash
+# Good
+if [[ -n "$variable" ]]; then
+
+# Bad
+if [ -n "$variable" ]; then
+```
+
+### Loop Formatting
+```bash
+for item in "${array[@]}"; do
+    echo "Processing: $item"
+done
+
+while [[ condition ]]; do
+    # loop body
+done
+```
+
+## Array Handling
+
+### Array Declaration
+```bash
+local required_apis=(
+    "compute.googleapis.com"
+    "storage.googleapis.com"
+    "iam.googleapis.com"
+)
+```
+
+### Array Iteration
+```bash
+for api in "${required_apis[@]}"; do
+    echo "Processing API: $api"
+done
+```
+
+### Array Length Check
+```bash
+if [[ ${#array[@]} -eq 0 ]]; then
+    echo "Array is empty"
+fi
+```
+
+## Error Handling and Validation
+
+### Input Validation
+Always validate inputs at the beginning of functions:
+```bash
+function_name() {
+    local project_id="$1"
+    local region="$2"
+    
+    if [[ -z "$project_id" ]]; then
+        log_error "Project ID is required"
+        return 1
+    fi
+    
+    if [[ -z "$region" ]]; then
+        log_error "Region is required"
+        return 1
+    fi
+}
+```
+
+### Error Propagation
+- Check return codes of important commands
+- Propagate errors appropriately
+- Use meaningful error messages
+
+```bash
+if ! gcloud auth list --filter=status:ACTIVE &>/dev/null; then
+    log_error "No authenticated gcloud user found"
+    log_error "Please run 'gcloud auth login' to authenticate"
+    return 1
+fi
+```
+
+## Security Best Practices
+
+### File Permissions
+Set appropriate permissions for sensitive files:
+```bash
+# Set read-write for owner only
+chmod 600 "$key_file"
+```
+
+### Credential Handling
+- Never log sensitive information
+- Set secure permissions on credential files
+- Include security warnings in logs
+
+```bash
+log_warning "SECURITY REMINDER: Store this key file securely and never commit to version control"
+```
+
+### Command Security
+- Quote all variables to prevent injection
+- Use full paths for commands when possible
+- Validate inputs before using in commands
+
+## Documentation
+
+### Function Documentation
+Document complex functions with comments:
+```bash
+# Verify if specific API is already enabled
+# Arguments:
+#   $1 - project_id: GCP project ID
+#   $2 - api_name: Name of the API to check
+# Returns:
+#   0 if API is enabled, 1 if not enabled
+check_api_enabled() {
+    # Function implementation
+}
+```
+
+### Inline Comments
+- Explain complex logic
+- Document assumptions
+- Clarify non-obvious code
+
+```bash
+# Skip comments and empty lines in config file
+[[ "$api" =~ ^[[:space:]]*# ]] && continue
+[[ -z "$api" ]] && continue
+
+api=$(echo "$api" | tr -d '[:space:]')  # Remove whitespace
+```
+
+## Command Line Argument Parsing
+
+### Usage Function
+Include a comprehensive usage function:
+```bash
+usage() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Description of what the script does.
+
+OPTIONS:
+    -h, --help              Show this help message
+    -c, --config FILE       Use custom configuration file
+    -v, --verbose           Enable verbose output
+    --dry-run              Show what would be done without making changes
+
+EXAMPLES:
+    $0                      # Use default configuration
+    $0 -c /path/to/custom.conf
+    $0 --dry-run           # Preview actions
+
+EOF
+}
+```
+
+### Argument Parsing
+Use consistent argument parsing pattern:
+```bash
+parse_arguments() {
+    local dry_run=false
+    local verbose=false
+    local custom_config=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                usage
+                exit $SUCCESS
+                ;;
+            -c|--config)
+                custom_config="$2"
+                shift 2
+                ;;
+            -v|--verbose)
+                verbose=true
+                shift
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit $ERROR
+                ;;
+        esac
+    done
+    
+    # Set global flags
+    export DRY_RUN="$dry_run"
+    export VERBOSE="$verbose"
+}
+```
+
+## Testing and Validation
+
+### Command Availability
+Check for required commands:
+```bash
+check_command() {
+    local command="$1"
+    local install_hint="$2"
+    
+    if ! command -v "$command" &> /dev/null; then
+        log_error "Required command '$command' is not installed or not in PATH"
+        if [[ -n "$install_hint" ]]; then
+            log_error "Installation hint: $install_hint"
+        fi
+        return 1
+    fi
+    
+    return 0
+}
+```
+
+### Dry Run Support
+Support dry-run mode for testing:
+```bash
+if [[ "$DRY_RUN" != "true" ]]; then
+    # Execute actual command
+    gcloud services enable "$api" --project="$PROJECT_ID"
+else
+    # Show what would be done
+    log_info "Would enable API: $api"
+fi
+```
+
+## File Naming Conventions
+
+- Use kebab-case for script files: `bootstrap-gcp-infrastructure.sh`
+- Use descriptive names that indicate the script's purpose
+- Include the `.sh` extension for all shell scripts
+- Group related scripts in appropriate directories
+
+## Enforcement
+
+This style guide should be enforced through:
+1. Code reviews - All shell scripts must be reviewed for style compliance
+2. Linting tools - Use shellcheck and other shell linting tools
+3. Documentation - Reference this guide in project documentation
+4. Examples - Use existing scripts as templates for new development
+
+## Tools and Validation
+
+### Recommended Tools
+- **shellcheck**: Static analysis tool for shell scripts
+- **shfmt**: Shell script formatter
+- **bash**: Use bash-specific features when they improve readability
+
+### Pre-commit Hooks
+Consider implementing pre-commit hooks to automatically check:
+- shellcheck compliance
+- File permissions
+- Line endings
+- Trailing whitespace
+
+This style guide ensures consistency, maintainability, and security across all shell scripts in infrastructure projects.

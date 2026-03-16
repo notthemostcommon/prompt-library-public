@@ -1,0 +1,181 @@
+---
+description: 'Jest and React Testing Library patterns for unit tests, integration tests, and E2E with Playwright. Apply when writing or reviewing test files.'
+globs: *.test.tsx,*.test.ts,*.spec.ts
+alwaysApply: false
+---
+
+# Frontend Testing Rules
+
+## 1. Framework Requirements
+
+| Purpose       | Framework                    | Notes                           |
+| ------------- | ---------------------------- | ------------------------------- |
+| Unit Tests    | Jest + React Testing Library | Default for all component tests |
+| E2E Tests     | Playwright                   | Critical user flows only        |
+| API Mocking   | MSW (Mock Service Worker)    | For integration tests           |
+| Accessibility | jest-axe                     | Automated a11y checks           |
+
+## 2. Query Priority (Accessibility-First)
+
+Use queries in this order - if you can't query accessibly, the UI may not be accessible:
+
+| Priority | Query                  | Use Case                                      |
+| -------- | ---------------------- | --------------------------------------------- |
+| 1        | `getByRole`            | Interactive elements (buttons, inputs, links) |
+| 2        | `getByLabelText`       | Form fields with labels                       |
+| 3        | `getByPlaceholderText` | Only if no label exists                       |
+| 4        | `getByText`            | Non-interactive text content                  |
+| 5        | `getByDisplayValue`    | Current form input values                     |
+| 6        | `getByAltText`         | Images                                        |
+| 7        | `getByTitle`           | Last resort                                   |
+| 8        | `getByTestId`          | **Avoid** - only when nothing else works      |
+
+**NEVER use**: `container.querySelector` or DOM traversal methods.
+
+## 3. Query Variants
+
+| Variant    | Returns           | Use When                              |
+| ---------- | ----------------- | ------------------------------------- |
+| `getBy*`   | Element or throws | Element SHOULD exist                  |
+| `queryBy*` | Element or null   | Asserting element does NOT exist      |
+| `findBy*`  | Promise<Element>  | Element appears after async operation |
+
+```typescript
+// ✅ Correct usage
+screen.getByRole('button') // Element exists
+expect(screen.queryByRole('alert')).not.toBeInTheDocument() // Element doesn't exist
+await screen.findByRole('button') // Appears after async
+```
+
+## 4. Critical Patterns (Not ESLint-Enforced)
+
+### Use `userEvent` over `fireEvent`
+
+```typescript
+// ✅ Correct - simulates real user behavior
+const user = userEvent.setup()
+await user.type(input, 'hello')
+await user.click(button)
+
+// ❌ Avoid - low-level, misses events
+fireEvent.change(input, { target: { value: 'hello' } })
+```
+
+### Single assertion in `waitFor`
+
+```typescript
+// ✅ Correct - fast failure
+await waitFor(() => expect(element).toBeInTheDocument())
+expect(element).toHaveTextContent('success')
+
+// ❌ Avoid - delays failure to timeout
+await waitFor(() => {
+  expect(element).toBeInTheDocument()
+  expect(element).toHaveTextContent('success')
+})
+```
+
+### No side-effects in `waitFor`
+
+```typescript
+// ✅ Correct - side-effects outside
+await user.click(button)
+await waitFor(() => expect(result).toBeInTheDocument())
+
+// ❌ Avoid - click runs multiple times
+await waitFor(() => {
+  fireEvent.click(button)
+  expect(result).toBeInTheDocument()
+})
+```
+
+## 5. Project Test Structure
+
+```
+__tests__/
+├── accessibility/      # jest-axe tests
+├── components/         # Unit tests (mirrors components/)
+├── hooks/              # Custom hook tests
+├── integration/        # Multi-component flows
+└── lib/                # Utility function tests
+```
+
+**Reference Implementation:**
+
+- Custom render helper: `@__tests__/test-utils.tsx`
+- Hook test example: `@__tests__/hooks/use-header-content.test.tsx`
+- Component test example: `@__tests__/components/layout/header.test.tsx`
+
+## 6. Test Patterns by Type
+
+### Component Test
+
+```typescript
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+
+test('button triggers callback on click', async () => {
+  // Arrange
+  const handleClick = jest.fn()
+  const user = userEvent.setup()
+  render(<Button onClick={handleClick}>Submit</Button>)
+
+  // Act
+  await user.click(screen.getByRole('button', { name: /submit/i }))
+
+  // Assert
+  expect(handleClick).toHaveBeenCalledTimes(1)
+})
+```
+
+### Hook Test
+
+```typescript
+import { renderHook, waitFor } from '@testing-library/react'
+
+test('hook fetches data', async () => {
+  const { result } = renderHook(() => useData())
+
+  await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  expect(result.current.data).toEqual(expectedData)
+})
+```
+
+### Async Component Test
+
+```typescript
+test('shows loading then data', async () => {
+  render(<DataComponent />)
+
+  // Loading state
+  expect(screen.getByText(/loading/i)).toBeInTheDocument()
+
+  // Data loaded
+  await screen.findByText(/john doe/i)
+  expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
+})
+```
+
+## 7. What ESLint Enforces
+
+The following are automatically enforced by `eslint-plugin-testing-library` and `eslint-plugin-jest-dom`:
+
+| Rule                         | ESLint Rule                                                      |
+| ---------------------------- | ---------------------------------------------------------------- |
+| Use `screen` for queries     | `testing-library/prefer-screen-queries`                          |
+| Use `findBy*` for async      | `testing-library/prefer-find-by`                                 |
+| No `container.querySelector` | `testing-library/no-container`, `testing-library/no-node-access` |
+| No side-effects in `waitFor` | `testing-library/no-wait-for-side-effects`                       |
+| No empty `waitFor` callback  | `testing-library/no-wait-for-empty-callback`                     |
+| No manual cleanup            | `testing-library/no-manual-cleanup`                              |
+| No unnecessary act           | `testing-library/no-unnecessary-act`                             |
+| Use jest-dom matchers        | `jest-dom/prefer-*` rules                                        |
+
+See `eslint.config.mjs` for full configuration.
+
+## 8. Cross-References
+
+- Accessibility testing: `accessibility.mdc` Section 10
+- Testing principles for planning: `frontend-testing-principles.mdc`
+- Kent C. Dodds: [Common Mistakes with React Testing Library](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library)
+- Testing Library Docs: [https://testing-library.com/docs/react-testing-library/intro/](https://testing-library.com/docs/react-testing-library/intro/)

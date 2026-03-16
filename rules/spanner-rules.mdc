@@ -1,0 +1,499 @@
+---
+description: Spanner DDL coding standards and best practices - DDL only, never DML
+globs: *.sql,migrations/*.sql
+alwaysApply: false
+---
+
+# Spanner Rules
+
+## Critical Rules
+
+### DDL ONLY - NEVER USE DML
+
+**MANDATORY**: All migrations must use **DDL (Data Definition Language) only**.
+
+**ALLOWED DDL Operations**:
+- `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`
+- `CREATE INDEX`, `DROP INDEX`
+- `DROP PROPERTY GRAPH`, `CREATE OR REPLACE PROPERTY GRAPH`
+- `RENAME COLUMN`
+
+**FORBIDDEN DML Operations**:
+- ❌ `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT`
+
+**Rationale**: Migrations change schema structure only. Data migration is handled separately via application scripts (`reset_graph.py`, `migrate_plans_to_graph.py`).
+
+---
+
+## DEFAULT Value Syntax
+
+**CRITICAL**: Spanner requires parentheses around DEFAULT values.
+
+```sql
+-- ✅ CORRECT: Parentheses around default values
+version INT64 NOT NULL DEFAULT (1),
+publication_status STRING(20) NOT NULL DEFAULT ('DRAFT'),
+is_deleted BOOL NOT NULL DEFAULT (FALSE),
+
+-- ❌ WRONG: Missing parentheses causes syntax error
+version INT64 NOT NULL DEFAULT 1,
+publication_status STRING(20) NOT NULL DEFAULT 'DRAFT',
+is_deleted BOOL NOT NULL DEFAULT FALSE,
+```
+
+**Error Message**: `Syntax error: Expecting '(' but found '1'`
+
+---
+
+## Interleaved Table Syntax
+
+**CRITICAL**: Spanner interleaved tables require a **comma** before the INTERLEAVE clause.
+
+```sql
+-- ✅ CORRECT: Comma before INTERLEAVE
+CREATE TABLE IntentHistory (
+  intent_id STRING(36) NOT NULL,
+  version INT64 NOT NULL,
+  ...
+  PRIMARY KEY (intent_id, version)
+), INTERLEAVE IN PARENT Intent ON DELETE CASCADE;
+
+-- ❌ WRONG: Missing comma causes "Expecting 'EOF' but found 'INTERLEAVE'"
+CREATE TABLE IntentHistory (
+  ...
+  PRIMARY KEY (intent_id, version)
+) INTERLEAVE IN PARENT Intent ON DELETE CASCADE;
+```
+
+**Error Message**: `Syntax error: Expecting 'EOF' but found 'INTERLEAVE'`
+
+---
+
+## Filtered Index WHERE Clause Syntax
+
+**CRITICAL**: Spanner filtered indexes ONLY support NULL predicates in WHERE clauses.
+
+### Supported Predicates:
+- `column IS NULL`
+- `column IS NOT NULL`
+
+### NOT Supported:
+- `column IS TRUE` / `column IS FALSE`
+- `column IS NOT TRUE` / `column IS NOT FALSE`
+- `column = value` (any equality)
+- String comparisons
+
+### NOT Supported:
+- ❌ `column IS TRUE` - causes error `Expecting 'NOT' but found 'TRUE'`
+- ❌ `column IS FALSE` - causes error `Expecting 'NOT' but found 'FALSE'`
+- ❌ `column = value` - causes error `Expecting 'IS' but found '='`
+- ❌ String equality (`column = 'DRAFT'`) - not supported in filtered indexes
+
+```sql
+-- ✅ CORRECT: Use IS NOT TRUE for boolean false filter
+CREATE INDEX idx_intent_publication ON Intent(publication_status) 
+  WHERE is_deleted IS NOT TRUE;
+
+-- ❌ WRONG: IS FALSE not supported
+CREATE INDEX idx_intent_publication ON Intent(publication_status) 
+  WHERE is_deleted IS FALSE;
+
+-- ❌ WRONG: Equality not supported  
+CREATE INDEX idx_intent_publication ON Intent(publication_status) 
+  WHERE is_deleted = false;
+
+-- ❌ WRONG: String equality not supported in filtered indexes
+CREATE INDEX idx_intent_draft ON Intent(updated_at DESC) 
+  WHERE publication_status = 'DRAFT' AND is_deleted = false;
+
+-- ✅ CORRECT: Use composite index instead (filter at query time)
+CREATE INDEX idx_intent_draft ON Intent(publication_status, is_deleted, updated_at DESC);
+```
+
+---
+
+## gcloud DDL Commands
+
+**CRITICAL**: Use `ddl update` for DDL statements, NOT `execute-sql`.
+
+```bash
+# ❌ WRONG: execute-sql does not support DDL
+gcloud spanner databases execute-sql credentials_graph_poc \
+  --sql="DROP TABLE Intent"
+# Error: DDL statements cannot be processed by the Query API
+
+# ✅ CORRECT: Use ddl update for DDL operations  
+gcloud spanner databases ddl update credentials_graph_poc \
+  --instance=my-instance \
+  --project=my-project \
+  --ddl="DROP INDEX idx_intent_location" \
+  --ddl="DROP INDEX idx_intent_plan_id" \
+  --ddl="DROP TABLE Intent"
+```
+
+---
+
+## Migration File Standards
+
+### Naming Convention
+```
+<version>_<description>.sql
+```
+- 3-digit sequential version numbers (001, 002, 010, etc.)
+- Lowercase with underscores for description
+- One logical change per migration
+
+### Required Header
+```sql
+-- =============================================================================
+-- MIGRATION <number>: <Clear Title>
+-- =============================================================================
+-- Purpose: <One sentence describing what this migration does>
+-- Breaking Change: Yes/No
+-- Prerequisites: <Migration number> must be applied (if applicable)
+-- =============================================================================
+```
+
+---
+
+## Property Graph Management
+
+**Always follow this pattern when modifying tables that are part of a property graph**:
+
+1. **Drop property graph first** (required before altering tables)
+2. **Make table structure changes** (ALTER TABLE, etc.)
+3. **Recreate property graph** with updated schema
+
+```sql
+-- Step 1: Drop property graph
+DROP PROPERTY GRAPH IF EXISTS CredentialsGraph;
+
+-- Step 2: Alter tables
+ALTER TABLE Credential 
+  ADD COLUMN a_display_name STRING(MAX) AS (normalized_name) STORED;
+
+-- Step 3: Recreate property graph
+CREATE OR REPLACE PROPERTY GRAPH CredentialsGraph
+  NODE TABLES (
+    Credential
+      KEY (credential_id)
+      LABEL Credential
+      PROPERTIES (
+        a_display_name,  -- New property
+        credential_id,
+        normalized_name
+      )
+  )
+  -- ... edge tables
+);
+```
+
+### Property Ordering
+- Properties are sorted alphabetically by Spanner Studio
+- Use `a_` prefix for properties that should display first (e.g., `a_display_name`)
+- Avoid `_` prefix (reserved by Spanner)
+- Place important display properties first in PROPERTIES list
+
+### a_display_name Pattern
+
+**Use `a_display_name` generated columns ONLY for display purposes in Spanner Studio.**
+
+**CRITICAL**: `a_display_name` is **display-only**. Do NOT use it in queries or application logic. Use the actual property name (e.g., `name` for Credential, `query` for Intent) for queries.
+
+**Problem**: Spanner Studio displays nodes using the alphabetically-first property, which often results in unintuitive labels (e.g., `created_at` instead of meaningful names).
+
+**Solution**: Add `a_display_name` generated column that maps to the most meaningful identifier for each node type. This ensures nodes display with meaningful names in Spanner Studio.
+
+**Pattern**:
+```sql
+-- Step 1: Drop property graph
+DROP PROPERTY GRAPH IF EXISTS CredentialsGraph;
+
+-- Step 2: Add generated columns to node tables
+ALTER TABLE Credential 
+  ADD COLUMN a_display_name STRING(MAX) AS (name) STORED;
+
+ALTER TABLE Jurisdiction 
+  ADD COLUMN a_display_name STRING(MAX) AS (jurisdiction_name) STORED;
+
+ALTER TABLE Intent 
+  ADD COLUMN a_display_name STRING(MAX) AS (query) STORED;
+
+-- Step 3: Recreate property graph with a_display_name as first property
+CREATE OR REPLACE PROPERTY GRAPH CredentialsGraph
+  NODE TABLES (
+    Credential
+      KEY (credential_id)
+      LABEL Credential
+      PROPERTIES (
+        a_display_name,  -- Display-only, sorts first alphabetically
+        credential_id,
+        name  -- Use this for queries, not a_display_name
+      )
+    -- ... other node tables
+  )
+  -- ... edge tables
+);
+```
+
+**Mapping Guide**:
+- **Credential**: `a_display_name` → `name` (display only), use `name` for queries
+- **Jurisdiction**: `a_display_name` → `jurisdiction_name` (display only), use `jurisdiction_name` for queries
+- **Intent**: `a_display_name` → `query` (display only), use `query` for queries
+
+**Why `a_` prefix?**
+- `a_` sorts first alphabetically (before `created_at`, `business_structure`, etc.)
+- `_` prefix is reserved by Spanner (cannot use `_display_name`)
+- Ensures `a_display_name` appears as the default node label in Spanner Studio
+
+**Query Guidelines**:
+- ✅ Use `name` for Credential queries: `WHERE c.name = @name`
+- ❌ Do NOT use `a_display_name` for queries: `WHERE c.a_display_name = @name` (wrong)
+- ✅ Include `a_display_name` in PROPERTIES for visualization
+- ✅ Include actual property (`name`) in PROPERTIES for querying
+
+---
+
+## Generated Columns
+
+**Use generated columns for derived values**:
+
+```sql
+ALTER TABLE Credential 
+  ADD COLUMN a_display_name STRING(MAX) AS (normalized_name) STORED;
+```
+
+**Key Points**:
+- Use `AS (expression) STORED` syntax
+- Values computed automatically for existing and future rows
+- No DML needed - values populate automatically
+- Cannot use non-deterministic functions (e.g., `CURRENT_TIMESTAMP()`)
+
+---
+
+## Table Alterations
+
+### Adding Columns
+Always specify data type, NULL/NOT NULL, and options:
+
+```sql
+ALTER TABLE Credential 
+  ADD COLUMN expiration_date DATE;
+
+ALTER TABLE Intent 
+  ADD COLUMN raw_created_at TIMESTAMP 
+  OPTIONS (allow_commit_timestamp=true);
+```
+
+### Dropping Columns, Tables, and Indexes
+
+**CRITICAL**: Spanner has different `IF EXISTS` support depending on the DROP operation.
+
+#### ✅ Statements that Support `IF EXISTS`:
+
+```sql
+-- Tables
+DROP TABLE IF EXISTS OldTable;
+
+-- Indexes
+DROP INDEX IF EXISTS idx_credential_expiration;
+
+-- Property Graphs
+DROP PROPERTY GRAPH IF EXISTS CredentialsGraph;
+```
+
+#### ❌ Statements that DO NOT Support `IF EXISTS`:
+
+```sql
+-- Columns - NO IF EXISTS support (causes syntax error)
+ALTER TABLE Credential DROP COLUMN old_column;
+
+-- ❌ WRONG: This will fail with syntax error
+ALTER TABLE Credential DROP COLUMN IF EXISTS old_column;
+```
+
+**Why No `IF EXISTS` for DROP COLUMN?**
+- Spanner requires explicit verification before dropping columns
+- If column doesn't exist, migration fails with clear error (safe failure)
+- Forces developers to document and verify prerequisites
+
+**Best Practice**:
+- Document prerequisites in migration header
+- Verify column exists before applying migration
+- Safe failure is better than silent success
+
+### Column Renaming
+- Use `RENAME COLUMN` (metadata-only, instant operation)
+- Preserves constraints (NOT NULL, etc.)
+- Cannot be rolled back
+
+```sql
+ALTER TABLE Credential 
+  RENAME COLUMN first_seen_at TO created_at;
+```
+
+---
+
+## Index Management
+
+### Naming Convention
+- Use `idx_` prefix followed by table and column names
+- Create indexes for frequently queried columns
+
+```sql
+CREATE INDEX idx_credential_normalized_name 
+  ON Credential(normalized_name);
+
+CREATE INDEX idx_credential_jurisdiction_type
+  ON Credential(jurisdiction_name, credential_type);
+```
+
+### Composite Index Ordering
+- Order by selectivity (most selective first)
+- Equality columns before range columns
+
+---
+
+## Data Migration Separation
+
+**Critical**: Data migration is handled separately from schema migrations.
+
+**Schema Migration (DDL)**: 
+- Changes table structure (handled in migration files)
+
+**Data Migration**: 
+- Handled via application scripts:
+  - `research_tools/reset_graph.py` - Reset/clear graph data
+  - `research_tools/migrate_plans_to_graph.py` - Re-extract plans
+
+**Workflow**:
+1. Apply DDL migration (schema changes only)
+2. Optionally reset graph data: `python research_tools/reset_graph.py`
+3. Optionally re-extract plans: `python research_tools/migrate_plans_to_graph.py --status completed`
+
+**Never mix DDL and data migration in the same file.**
+
+---
+
+## Timestamp Standards
+
+**Standard timestamp fields**:
+- `raw_created_at` - Original timestamp from source system
+- `created_at` - When entity was created in Spanner
+- `updated_at` - When entity was last modified
+
+```sql
+ALTER TABLE Credential 
+  ADD COLUMN raw_created_at TIMESTAMP 
+  OPTIONS (allow_commit_timestamp=true);
+
+ALTER TABLE Credential 
+  ADD COLUMN created_at TIMESTAMP NOT NULL 
+  OPTIONS (allow_commit_timestamp=true);
+```
+
+---
+
+## Anti-Patterns
+
+❌ **DON'T**: Mix DDL and DML
+```sql
+-- ❌ BAD
+ALTER TABLE Credential ADD COLUMN new_field STRING(100);
+INSERT INTO Credential (credential_id, new_field) VALUES ('id', 'value');
+```
+
+❌ **DON'T**: Modify tables without dropping property graph first
+```sql
+-- ❌ BAD
+ALTER TABLE Credential ADD COLUMN new_field STRING(100);
+-- Property graph will fail - table structure changed
+```
+
+❌ **DON'T**: Use DML to populate generated columns
+```sql
+-- ❌ BAD: Generated columns populate automatically
+ALTER TABLE Credential ADD COLUMN a_display_name STRING(MAX) AS (normalized_name) STORED;
+UPDATE Credential SET a_display_name = normalized_name;  -- Unnecessary!
+```
+
+❌ **DON'T**: Create migrations with multiple unrelated changes
+```sql
+-- ❌ BAD: Migration does three different things
+-- Create separate migrations
+```
+
+❌ **DON'T**: Edit applied migrations
+```sql
+-- ❌ BAD: Once migration is applied, don't edit it
+-- Create a new migration instead
+```
+
+❌ **DON'T**: Use `IF EXISTS` with DROP COLUMN
+```sql
+-- ❌ BAD: Causes syntax error in Spanner
+ALTER TABLE Intent DROP COLUMN IF EXISTS query;
+
+-- ✅ GOOD: Correct syntax
+ALTER TABLE Intent DROP COLUMN query;
+```
+
+❌ **DON'T**: Omit parentheses in DEFAULT values
+```sql
+-- ❌ BAD: Missing parentheses
+version INT64 NOT NULL DEFAULT 1,
+
+-- ✅ GOOD: Include parentheses
+version INT64 NOT NULL DEFAULT (1),
+```
+
+❌ **DON'T**: Use any boolean predicate in filtered index WHERE
+```sql
+-- ❌ BAD: IS FALSE not supported
+WHERE is_deleted IS FALSE
+
+-- ❌ BAD: IS NOT TRUE not supported
+WHERE is_deleted IS NOT TRUE
+
+-- ❌ BAD: Equality not supported
+WHERE is_deleted = false
+
+-- ✅ GOOD: Use composite index instead
+CREATE INDEX idx_name ON Table(col1, is_deleted);
+```
+
+❌ **DON'T**: Use execute-sql for DDL operations
+```bash
+# ❌ BAD: execute-sql is for queries only
+gcloud spanner databases execute-sql db --sql="DROP TABLE T"
+
+# ✅ GOOD: Use ddl update for DDL
+gcloud spanner databases ddl update db --ddl="DROP TABLE T"
+```
+
+---
+
+## Checklist
+
+Before creating a migration, verify:
+
+- [ ] Migration uses **DDL only** (no INSERT/UPDATE/DELETE)
+- [ ] Migration file follows naming convention (`<version>_<description>.sql`)
+- [ ] Migration includes proper header comment block
+- [ ] Migration represents one logical change
+- [ ] Property graph is dropped before table alterations (if applicable)
+- [ ] Property graph is recreated after table alterations (if applicable)
+- [ ] Generated columns use `AS (expression) STORED` syntax
+- [ ] `IF EXISTS` used only where supported (DROP TABLE, DROP INDEX, DROP PROPERTY GRAPH)
+- [ ] `IF EXISTS` NOT used with DROP COLUMN (causes syntax error)
+- [ ] Indexes have descriptive names with `idx_` prefix
+- [ ] Data migration is handled separately (not in migration file)
+- [ ] Migration tested on development database first
+- [ ] DEFAULT values use parentheses: `DEFAULT (1)` not `DEFAULT 1`
+- [ ] Interleaved tables have comma before INTERLEAVE: `), INTERLEAVE IN PARENT`
+- [ ] Filtered indexes only use `IS NULL`/`IS NOT NULL` (no boolean predicates)
+- [ ] No string equality in filtered index WHERE clauses
+
+---
+
+**Remember**: Migrations are structural changes only. Data changes are handled separately via application scripts.

@@ -1,0 +1,239 @@
+---
+description: "Python Development Standards (tooling-first, Python 3.11+)"
+globs: *.py
+alwaysApply: false
+---
+# Python Development Standards (Python 3.11+)
+
+This rule is **tooling-first**: do not restate style rules that Black/Ruff already enforce. Keep this document focused on **project conventions and patterns**.
+
+## 1) Tooling (source of truth)
+
+- **Dependency / venv management**: `uv` (**required**; do not use `pip` directly)
+- **Formatting**: `ruff format` (**required**; do not use Black)
+- **Linting + import sorting**: `ruff check` (**required**, select `E`, `F`, `I`)
+- **Type checking**: basedpyright (**required**, minimum config below)
+- **Testing**: pytest (+ `pytest-asyncio` when async)
+
+**Rule**: treat the repo’s `pyproject.toml` as the authoritative configuration. If this doc conflicts with tooling config, **tooling wins**.
+
+Minimum Ruff policy (keep in `pyproject.toml`):
+
+```toml
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"] # formatter handles line wrapping
+```
+
+Minimum basedpyright policy (keep in `pyproject.toml`). This is a baseline; repos can ratchet stricter over time:
+
+- `include` should match repo layout. Prefer including whichever exist: `app/`, `src/`, `tools/`, `tests/`.
+- `exclude` should omit editor, venv, cache, and build/output directories.
+
+```toml
+[tool.basedpyright]
+exclude = [
+    ".cursor",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "output",
+]
+# Adjust based on repo layout (include whichever exist):
+include = ["app", "src", "tools", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingImports = false
+reportMissingTypeStubs = false
+```
+
+To ratchet stricter later:
+
+- Change `typeCheckingMode` to `"strict"`.
+- Optionally enable missing imports/stubs checks as the repo is ready.
+
+## 2) Naming conventions (project standard)
+
+| Item | Convention | Example |
+|------|------------|---------|
+| Files / modules | `snake_case.py` | `embedding_service.py` |
+| Classes | `PascalCase` | `EmbeddingService` |
+| Functions / methods | `snake_case` | `get_embeddings` |
+| Variables | `snake_case` | `batch_size` |
+| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRIES` |
+| Private | `_leading_underscore` | `_validate` |
+
+## 3) Type annotations (Python 3.11+)
+
+- **Must**: type annotate public functions, service boundaries, and FastAPI route functions.
+- **Prefer**: built-in generics (`list[str]`, `dict[str, int]`) and union syntax (`X | None`).
+- **Avoid**: `Any` in new code unless it’s truly untyped I/O at the boundary.
+
+```python
+from pathlib import Path
+from typing import Any
+
+
+def load_doc(path: str | Path) -> dict[str, Any] | None:
+    ...
+```
+
+## 4) FastAPI patterns (project standard)
+
+### Pydantic v2 models
+
+Use Pydantic v2 features (`ConfigDict`, `field_validator`). Prefer validation at the model layer over ad-hoc checks in route functions.
+
+```python
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class EmbeddingRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
+
+    text: str = Field(..., min_length=1, max_length=10_000)
+    model: str = Field(default="text-embedding-004")
+    dimensions: int | None = Field(default=None, ge=1, le=2048)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Text cannot be empty")
+        return v
+```
+
+### Dependency injection
+
+Use `typing.Annotated[..., Depends(...)]` for dependencies.
+
+```python
+from typing import Annotated
+
+from fastapi import Depends
+
+
+def get_embedding_service() -> "EmbeddingService":
+    ...
+
+
+async def endpoint(
+    service: Annotated["EmbeddingService", Depends(get_embedding_service)],
+):
+    ...
+```
+
+## 5) Async patterns (critical for FastAPI)
+
+**Rule**: Never call synchronous blocking I/O from an `async` function—it blocks the entire event loop.
+
+**Blocking operations** include: synchronous HTTP clients, file I/O, database drivers without async support, and SDK clients that perform network calls.
+
+**Pattern**: Offload blocking calls with `asyncio.to_thread()`:
+
+```python
+import asyncio
+
+def _blocking_call(data: str) -> dict:
+    return some_sync_client.call(data)
+
+async def non_blocking_call(data: str) -> dict:
+    return await asyncio.to_thread(_blocking_call, data)
+```
+
+**Prefer native async libraries** when available (e.g., `httpx.AsyncClient`, `aiofiles`, async database drivers).
+
+## 6) Error handling & logging (project standard)
+
+- **API errors**: raise `fastapi.HTTPException` for expected client errors.
+- **Unexpected failures**: log with stack trace (`logger.exception(...)`) and return a generic server error.
+- **Logging**: prefer parameterized logging (avoid f-strings in logs) and include request context via `extra` when available.
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+request_id = "unknown"
+
+try:
+    ...
+except Exception:
+    logger.exception(
+        "Unhandled failure while generating embedding",
+        extra={"request_id": request_id},
+    )
+    raise
+```
+
+## 7) Configuration management (pydantic-settings)
+
+Use `pydantic-settings` for environment-driven config and cache the settings object.
+
+```python
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    google_ai_api_key: str = Field(..., alias="GOOGLE_AI_API_KEY")
+    vertex_ai_project: str = Field(..., alias="VERTEX_AI_PROJECT")
+    vertex_ai_location: str = Field(default="us-central1")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+```
+
+## 8) GCP integration (Secret Manager)
+
+- Retrieve secrets via **Secret Manager**.
+- Cache where appropriate.
+- **Never** log secrets (even masked values) or include them in exceptions.
+
+```python
+from functools import lru_cache
+
+from google.cloud import secretmanager
+
+
+@lru_cache
+def get_secret(secret_id: str, project_id: str) -> str:
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+    response = client.access_secret_version(request={"name": name})
+    return response.payload.data.decode("UTF-8")
+```
+
+## 9) Project structure (convention)
+
+```
+project/
+├── app/
+│   ├── main.py
+│   ├── config.py
+│   ├── models/
+│   ├── routers/
+│   ├── services/
+│   └── utils/
+├── tests/
+└── pyproject.toml
+```
+
+## 10) Testing (pytest)
+
+- Use `pytest` for unit/integration tests.
+- Use `pytest-asyncio` for async code.
+- Prefer fixtures for shared setup and `@pytest.mark.parametrize` for table-driven cases.
+
+For general Python style guidance, refer to [PEP 8](https://peps.python.org/pep-0008/).

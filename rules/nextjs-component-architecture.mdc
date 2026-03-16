@@ -1,0 +1,154 @@
+---
+description: Next.js component folder structure and organization rules for the /components directory
+globs: components/**/*.tsx,components/**/*.ts,__tests__/components/**/*.test.tsx
+alwaysApply: false
+---
+# Next.js Component Architecture Rules
+
+## Folder Structure
+
+The `/components` directory follows a strict organizational hierarchy:
+
+```
+components/
+├── ui/          # shadcn/ui primitives only
+├── shared/      # Cross-cutting reusable (non-shadcn)
+├── layout/      # App shell (header, footer, hero)
+├── providers/   # React context providers
+├── features/    # Domain-specific business components
+└── aem/         # AEM content-driven components
+```
+
+## Placement Rules
+
+### `ui/` - UI Primitives
+- **ONLY** shadcn/ui components and generic UI building blocks
+- Zero business logic, zero data fetching
+- Examples: Button, Card, Input, Select, Skeleton, Accordion
+
+### `shared/` - Cross-Cutting Components
+- Custom reusable components used across multiple features
+- NOT shadcn (those go in `ui/`)
+- Examples: accessibility utilities, generic headers, containers
+
+### `layout/` - App Shell
+- Structural components: header, footer, hero, breadcrumb, logo
+- Group related components in subfolders when 3+ files exist
+- Example structure:
+  - `layout/header/` - navigation, menus, user controls
+  - `layout/footer/` - footer content, links, skeletons
+  - `layout/hero/` - hero variants, client content
+  - Root level files for standalone components (logo, breadcrumb)
+- Even if they consume AEM data, shell components go here
+
+### `providers/` - Context Providers
+- React context providers only
+- Naming: `{name}-provider.tsx`
+- Examples: auth-provider, query-provider, theme-provider
+
+### `features/` - Business Features
+- Domain-specific components NOT driven by AEM content
+- One subfolder per feature/domain
+- Examples: auth/, forms/, dashboard/, settings/
+
+### `aem/` - AEM Content Components
+- ALL components that render AEM content
+- `aem/pages/` - PageModel compositions
+- `aem/{content-type}/` - Content Fragment renderers
+- Examples: nav-cards/, helpful-links/, articles/
+
+## Import Rules
+
+### No Barrel Exports
+```typescript
+// ✅ Direct imports
+import { Header } from '@/components/layout/header/header'
+import { Button } from '@/components/ui/button'
+import { Dashboard } from '@/components/features/dashboard/dashboard'
+
+// ❌ Never use barrel exports
+import { Header, Footer } from '@/components/layout'
+```
+
+### Do NOT Create index.ts Files
+Barrel exports (index.ts) are prohibited. Import components directly from their files.
+
+## Component Placement Decision
+
+Ask these questions in order:
+
+1. **Is it shadcn/ui?** → `ui/`
+2. **Is it an accessibility/cross-cutting utility?** → `shared/`
+3. **Is it app shell (header/footer/hero)?** → `layout/`
+4. **Is it a context provider?** → `providers/`
+5. **Does it render AEM content?** → `aem/{content-type}/`
+6. **Is it feature-specific business logic?** → `features/{feature}/`
+
+## File Naming
+
+- Use **kebab-case** for all component files: `my-component.tsx`
+- Skeleton files: `{component}-skeleton.tsx`
+- Container files: `{component}-container.tsx`
+- Provider files: `{name}-provider.tsx`
+- Test files: `{component-name}.test.tsx`
+
+## Creating New Components
+
+### New AEM Content Type
+```
+components/aem/{content-type}/
+├── {name}-container.tsx      # Data-aware wrapper
+├── {name}-{part}.tsx         # Subcomponents
+└── {name}-skeleton.tsx       # Loading state
+```
+
+### New Feature
+```
+components/features/{feature}/
+├── {component-a}.tsx
+├── {component-b}.tsx
+└── ... (related components)
+```
+
+### New Layout Section
+- If 3+ files: create subfolder `layout/{section}/`
+- If 1-2 files: place at `layout/` root
+
+## Test File Organization
+
+Tests MUST mirror the component folder structure exactly.
+
+### Structure Rule
+```
+components/{category}/{path}/component.tsx
+    ↓ mirrors to ↓
+__tests__/components/{category}/{path}/component.test.tsx
+```
+
+### Examples
+| Component Path | Test Path |
+|----------------|-----------|
+| `components/ui/button.tsx` | `__tests__/components/ui/button.test.tsx` |
+| `components/shared/utils.tsx` | `__tests__/components/shared/utils.test.tsx` |
+| `components/layout/header/header.tsx` | `__tests__/components/layout/header/header.test.tsx` |
+| `components/features/auth/login.tsx` | `__tests__/components/features/auth/login.test.tsx` |
+| `components/aem/articles/article-card.tsx` | `__tests__/components/aem/articles/article-card.test.tsx` |
+
+### Test Folder Categories
+```
+__tests__/components/
+├── aem/           # Tests for AEM content components
+├── features/      # Tests for feature components
+├── layout/        # Tests for layout components (with subfolders)
+├── shared/        # Tests for shared components
+└── ui/            # Tests for UI primitives (if needed)
+```
+
+## Prohibited Patterns
+
+- ❌ Creating components at `components/` root level
+- ❌ Creating `index.ts` barrel export files
+- ❌ Mixing AEM and non-AEM components in same folder
+- ❌ Placing business logic in `ui/` components
+- ❌ Creating feature folders in `aem/` for non-AEM features
+- ❌ Placing tests in paths that don't mirror component paths

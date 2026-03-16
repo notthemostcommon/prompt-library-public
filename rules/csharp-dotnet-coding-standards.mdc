@@ -1,0 +1,348 @@
+---
+description: C# / .NET Core coding standards based on Microsoft's official conventions (2024)
+globs: *.cs,*.csproj
+alwaysApply: false
+---
+# C# / .NET Core Coding Standards for Cursor IDE
+# Based on Microsoft's official coding conventions (2024)
+# https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+
+## General Principles
+- Write clean, readable, and maintainable code
+- Follow Microsoft's official .NET coding conventions
+- Prioritize consistency across the codebase
+- Use modern C# language features appropriately
+
+## Naming Conventions
+
+### Classes, Interfaces, Methods, and Properties
+- Use PascalCase for all public members
+- Prefix interfaces with 'I'
+- Use descriptive names that clearly indicate purpose
+
+Examples:
+```csharp
+public class CustomerService { }
+public interface IOrderProcessor { }
+public class UserRepository { }
+public void ProcessPayment() { }
+public string CustomerName { get; set; }
+```
+
+### Variables and Parameters
+- Use camelCase for local variables and method parameters
+- Use descriptive names, avoid abbreviations
+- Avoid single-letter variable names except for loop counters
+
+Examples:
+```csharp
+int customerCount;
+string userEmail;
+bool isAuthenticated;
+decimal totalAmount;
+```
+
+### Private Fields
+- Use camelCase with underscore prefix
+- Keep fields private and expose through properties
+
+Examples:
+```csharp
+private int _retryCount;
+private string _connectionString;
+private readonly ILogger _logger;
+```
+
+### Constants
+- Use PascalCase for constants
+- Use descriptive names that indicate the constant's purpose
+
+Examples:
+```csharp
+public const int MaxRetryAttempts = 3;
+public const string DefaultCulture = "en-US";
+private const decimal TaxRate = 0.08m;
+```
+
+### Enums
+- Use PascalCase for enum names and values
+- Use singular names for enums unless they represent flags
+
+Examples:
+```csharp
+public enum OrderStatus
+{
+    Pending,
+    Processing,
+    Completed,
+    Cancelled
+}
+```
+
+## Code Formatting and Layout
+
+### Indentation and Spacing
+- Use 4 spaces for indentation (never tabs)
+- Use spaces around operators and after commas
+- No trailing whitespace
+- Maximum line length: 120 characters
+
+### Braces and Blocks
+- Always use braces for control structures, even single statements
+- Place opening braces on new lines for types and methods
+- Place opening braces on same line for control structures
+
+Examples:
+```csharp
+public class Example
+{
+    public void Method()
+    {
+        if (condition) {
+            DoSomething();
+        }
+        
+        for (int i = 0; i < count; i++) {
+            ProcessItem(i);
+        }
+    }
+}
+```
+
+### Blank Lines
+- Use single blank line to separate logical sections
+- Use blank lines between method definitions
+- No multiple consecutive blank lines
+
+## Language Usage Guidelines
+
+### Type Usage
+- Use built-in type aliases: `int`, `string`, `bool`, `decimal`, etc.
+- Avoid using .NET type names: `Int32`, `String`, `Boolean`
+
+Examples:
+```csharp
+// Correct
+int count;
+string message;
+bool isValid;
+
+// Incorrect
+Int32 count;
+String message;
+Boolean isValid;
+```
+
+### Implicit Typing (var)
+- Use `var` when the type is evident from the right side
+- Always use explicit types for primitive types when not obvious
+- Use `var` for complex generic types
+
+Examples:
+```csharp
+// Good use of var
+var customers = new List<Customer>();
+var result = customerService.GetCustomers();
+
+// Use explicit types when not obvious
+int count = GetCount();
+string name = GetUserInput();
+```
+
+### String Usage
+- Prefer string interpolation over `String.Format` or concatenation
+- Use `string.IsNullOrEmpty()` and `string.IsNullOrWhiteSpace()` for checks
+- Use verbatim strings for file paths and regex patterns
+
+Examples:
+```csharp
+// String interpolation
+string message = $"Hello, {name}! You have {count} items.";
+
+// Verbatim strings
+string path = @"C:\Users\Documents\file.txt";
+string pattern = @"^\d{3}-\d{2}-\d{4}$";
+```
+
+### Collections and LINQ
+- Use collection initializers when appropriate
+- Prefer LINQ methods over traditional loops when readable
+- Use `IEnumerable<T>` for method parameters when possible
+
+Examples:
+```csharp
+var numbers = new List<int> { 1, 2, 3, 4, 5 };
+var evenNumbers = numbers.Where(n => n % 2 == 0).ToList();
+```
+
+## Async/Await Guidelines
+- Always suffix async methods with "Async"
+- Use `async`/`await` for I/O-bound operations
+- Avoid `async void` except for event handlers
+- Use `ConfigureAwait(false)` in library code
+
+Examples:
+```csharp
+public async Task<Customer> GetCustomerAsync(int id)
+{
+    var customer = await _repository.GetByIdAsync(id).ConfigureAwait(false);
+    return customer;
+}
+
+public async Task ProcessOrderAsync(Order order)
+{
+    await _orderService.ProcessAsync(order);
+}
+```
+
+## Exception Handling
+- Catch specific exceptions, not general `Exception`
+- Use `using` statements for disposable resources
+- Document exceptions in XML comments
+
+Examples:
+```csharp
+try
+{
+    var data = await ReadFileAsync(filePath);
+    return ProcessData(data);
+}
+catch (FileNotFoundException ex)
+{
+    _logger.LogError(ex, "File not found: {FilePath}", filePath);
+    throw new DataProcessingException("Required file not found", ex);
+}
+catch (UnauthorizedAccessException ex)
+{
+    _logger.LogError(ex, "Access denied: {FilePath}", filePath);
+    throw new DataProcessingException("Access denied to file", ex);
+}
+```
+
+## Documentation and Comments
+
+### XML Documentation
+- Document all public, protected, and internal members
+- Use proper XML documentation tags
+- Include parameter descriptions and return values
+
+Examples:
+```csharp
+/// <summary>
+/// Calculates the total price including tax and discounts.
+/// </summary>
+/// <param name="basePrice">The base price before tax and discounts.</param>
+/// <param name="taxRate">The tax rate as a decimal (e.g., 0.08 for 8%).</param>
+/// <param name="discountPercentage">The discount percentage as a decimal.</param>
+/// <returns>The total price after applying tax and discounts.</returns>
+/// <exception cref="ArgumentException">Thrown when basePrice is negative.</exception>
+public decimal CalculateTotalPrice(decimal basePrice, decimal taxRate, decimal discountPercentage)
+{
+    if (basePrice < 0)
+        throw new ArgumentException("Base price cannot be negative", nameof(basePrice));
+        
+    var discountedPrice = basePrice * (1 - discountPercentage);
+    return discountedPrice * (1 + taxRate);
+}
+```
+
+### Inline Comments
+- Use inline comments sparingly
+- Focus on explaining "why" not "what"
+- Keep comments concise and up-to-date
+
+## Dependency Injection and Architecture
+- Use constructor injection for required dependencies
+- Use property injection only for optional dependencies
+- Register services with appropriate lifetimes
+- Follow SOLID principles
+
+Examples:
+```csharp
+public class CustomerService
+{
+    private readonly ICustomerRepository _repository;
+    private readonly ILogger<CustomerService> _logger;
+    
+    public CustomerService(ICustomerRepository repository, ILogger<CustomerService> logger)
+    {
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+}
+```
+
+## Performance Guidelines
+- Use `StringBuilder` for multiple string concatenations
+- Prefer `List<T>` over `ArrayList`
+- Use appropriate collection types for the use case
+- Consider memory allocation in hot paths
+
+## Testing Guidelines
+- Use descriptive test method names
+- Follow AAA pattern (Arrange, Act, Assert)
+- One assertion per test when possible
+- Use meaningful test data
+
+Examples:
+```csharp
+[Test]
+public async Task GetCustomerAsync_WhenCustomerExists_ReturnsCustomer()
+{
+    // Arrange
+    var customerId = 123;
+    var expectedCustomer = new Customer { Id = customerId, Name = "John Doe" };
+    _mockRepository.Setup(r => r.GetByIdAsync(customerId)).ReturnsAsync(expectedCustomer);
+    
+    // Act
+    var result = await _customerService.GetCustomerAsync(customerId);
+    
+    // Assert
+    Assert.AreEqual(expectedCustomer.Id, result.Id);
+    Assert.AreEqual(expectedCustomer.Name, result.Name);
+}
+```
+
+## Code Analysis and Tools
+- Enable nullable reference types in new projects
+- Use code analyzers (FxCop, StyleCop)
+- Follow compiler warnings and suggestions
+- Use EditorConfig for consistent formatting
+
+## Modern C# Features (C# 12/.NET 8)
+- Use record types for immutable data
+- Use pattern matching where appropriate
+- Use primary constructors when suitable
+- Use required properties for mandatory data
+
+Examples:
+```csharp
+// Record types
+public record Customer(int Id, string Name, string Email);
+
+// Pattern matching
+string GetOrderStatus(Order order) => order.Status switch
+{
+    OrderStatus.Pending => "Your order is being processed",
+    OrderStatus.Shipped => "Your order has been shipped",
+    OrderStatus.Delivered => "Your order has been delivered",
+    _ => "Unknown status"
+};
+
+// Required properties
+public class Product
+{
+    public required string Name { get; init; }
+    public required decimal Price { get; init; }
+    public string? Description { get; init; }
+}
+```
+
+## Security Best Practices
+- Validate all inputs
+- Use parameterized queries for database access
+- Don't log sensitive information
+- Use secure authentication and authorization
+- Follow principle of least privilege
+
+Remember: These rules should enhance code quality and maintainability. When in doubt, prioritize readability and consistency with the existing codebase.
