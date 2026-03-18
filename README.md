@@ -8,7 +8,7 @@ Add this library to your project as a git submodule:
 
 ```bash
 # Add the submodule to your project
-git submodule add git@github.com:your-org/prompt-library.git .cursor
+git submodule add git@github.com:notthemostcommon/prompt-library-public.git .cursor
 
 # Initialize and update the submodule
 git submodule update --init --recursive
